@@ -1,8 +1,8 @@
 const jwt = require("jsonwebtoken");
+const User = require("../models/user.model");
 
-const protect = (req, res, next) => {
+const protect = async (req, res, next) => {
   try {
-    // Get Authorization header
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -12,19 +12,33 @@ const protect = (req, res, next) => {
       });
     }
 
-    // Extract token
     const token = authHeader.split(" ")[1];
 
-    // Verify token
     const decoded = jwt.verify(
       token,
       process.env.JWT_SECRET
     );
 
-    // Attach authenticated user to request
+    const user = await User.findById(decoded.userId).select("-password");
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "User no longer exists.",
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Your account is inactive.",
+      });
+    }
+
     req.user = {
-      userId: decoded.userId,
-      role: decoded.role,
+      userId: user._id,
+      role: user.role,
+      assignedClass: user.assignedClass,
     };
 
     next();

@@ -1,7 +1,8 @@
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-const User = require("../models/user.model.js");
+const User = require("../models/user.model");
+const Class = require("../models/class.model");
 
 // Generate JWT token
 const generateToken = (userId, role) => {
@@ -218,6 +219,7 @@ const getCurrentUser = async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Server error while fetching user",
+      error: error.message,
     });
   }
 };

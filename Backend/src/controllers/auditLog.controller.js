@@ -1,0 +1,228 @@
+const AuditLog = require("../models/AuditLog.model");
+
+// =====================================================
+// CREATE AUDIT LOG
+// Internal function used by other controllers
+// =====================================================
+
+const createAuditLog = async ({
+  user,
+  role,
+  action,
+  module,
+  description,
+  targetType = null,
+  targetId = null,
+  metadata = {},
+  ipAddress = null,
+  userAgent = null,
+}) => {
+  try {
+    const auditLog = await AuditLog.create({
+      user,
+      role,
+      action,
+      module,
+      description,
+      targetType,
+      targetId,
+      metadata,
+      ipAddress,
+      userAgent,
+    });
+
+    return auditLog;
+  } catch (error) {
+    console.error("Create Audit Log Error:", error);
+
+    // Audit failure should not normally crash
+    // the main business operation.
+    return null;
+  }
+};
+
+// =====================================================
+// GET ALL AUDIT LOGS
+// Super Admin ONLY
+// =====================================================
+
+const getAuditLogs = async (req, res) => {
+  try {
+    const {
+      action,
+      module,
+      role,
+      search,
+      page = 1,
+      limit = 20,
+    } = req.query;
+
+    const filter = {};
+
+    // -----------------------------------------------
+    // Filters
+    // -----------------------------------------------
+
+    if (action) {
+      filter.action = action;
+    }
+
+    if (module) {
+      filter.module = module;
+    }
+
+    if (role) {
+      filter.role = role;
+    }
+
+    // -----------------------------------------------
+    // Pagination
+    // -----------------------------------------------
+
+    const pageNumber = Math.max(
+      Number(page) || 1,
+      1
+    );
+
+    const limitNumber = Math.min(
+      Math.max(Number(limit) || 20, 1),
+      100
+    );
+
+    const skip =
+      (pageNumber - 1) * limitNumber;
+
+    // -----------------------------------------------
+    // Search user name/email
+    // -----------------------------------------------
+
+    let userIds = null;
+
+    if (search) {
+      const User = require("../models/user.model");
+
+      const users = await User.find({
+        $or: [
+          {
+            name: {
+              $regex: search,
+              $options: "i",
+            },
+          },
+          {
+            email: {
+              $regex: search,
+              $options: "i",
+            },
+          },
+        ],
+      }).select("_id");
+
+      userIds = users.map(
+        (user) => user._id
+      );
+
+      filter.$or = [
+        {
+          user: {
+            $in: userIds,
+          },
+        },
+        {
+          description: {
+            $regex: search,
+            $options: "i",
+          },
+        },
+      ];
+    }
+
+    // -----------------------------------------------
+    // Fetch logs
+    // -----------------------------------------------
+
+    const [logs, total] =
+      await Promise.all([
+        AuditLog.find(filter)
+          .populate(
+            "user",
+            "name email role"
+          )
+          .sort({
+            timestamp: -1,
+          })
+          .skip(skip)
+          .limit(limitNumber),
+
+        AuditLog.countDocuments(filter),
+      ]);
+
+    res.status(200).json({
+      success: true,
+      count: logs.length,
+      total,
+      page: pageNumber,
+      totalPages: Math.ceil(
+        total / limitNumber
+      ),
+      logs,
+    });
+  } catch (error) {
+    console.error(
+      "Get Audit Logs Error:",
+      error
+    );
+
+    res.status(500).json({
+      success: false,
+      message:
+        "Server error while fetching audit logs",
+    });
+  }
+};
+
+// =====================================================
+// GET SINGLE AUDIT LOG
+// Super Admin ONLY
+// =====================================================
+
+const getAuditLogById = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const log = await AuditLog.findById(id)
+      .populate(
+        "user",
+        "name email role"
+      );
+
+    if (!log) {
+      return res.status(404).json({
+        success: false,
+        message: "Audit log not found",
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      log,
+    });
+  } catch (error) {
+    console.error(
+      "Get Audit Log Error:",
+      error
+    );
+
+    res.status(500).json({
+      success: false,
+      message:
+        "Server error while fetching audit log",
+    });
+  }
+};
+
+module.exports = {
+  createAuditLog,
+  getAuditLogs,
+  getAuditLogById,
+};
