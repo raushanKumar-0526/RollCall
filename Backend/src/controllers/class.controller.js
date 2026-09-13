@@ -319,10 +319,103 @@ const deleteClass = async (req, res) => {
   }
 };
 
+//=====================================================
+// Assign class to a class_admin
+// Super admin only
+//=====================================================
+
+const assignClassTeacher = async (req, res) => {
+  try {
+    const { classId } = req.params;
+    const { teacherId } = req.body;
+
+    if (!teacherId) {
+      return res.status(400).json({
+        success: false,
+        message: "Teacher ID is required.",
+      });
+    }
+
+    // Find class
+    const classData = await Class.findById(classId);
+
+    if (!classData) {
+      return res.status(404).json({
+        success: false,
+        message: "Class not found.",
+      });
+    }
+
+    // Find teacher
+    const teacher = await User.findById(teacherId);
+
+    if (!teacher) {
+      return res.status(404).json({
+        success: false,
+        message: "Teacher not found.",
+      });
+    }
+
+    // Make sure user is a Class Admin
+    if (teacher.role !== "class_admin") {
+      return res.status(400).json({
+        success: false,
+        message: "Selected user is not a class admin.",
+      });
+    }
+
+    // If another teacher was already assigned,
+    // remove their assignedClass
+    if (
+      classData.classTeacher &&
+      classData.classTeacher.toString() !== teacherId
+    ) {
+      await User.findByIdAndUpdate(
+        classData.classTeacher,
+        {
+          $set: {
+            assignedClass: null,
+          },
+        }
+      );
+    }
+
+    // Assign teacher to class
+    classData.classTeacher = teacherId;
+    await classData.save();
+
+    // Assign class to teacher
+    teacher.assignedClass = classData._id;
+    await teacher.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Class teacher assigned successfully.",
+      data: {
+        classId: classData._id,
+        teacherId: teacher._id,
+        teacherName: teacher.name,
+        teacherEmail: teacher.email,
+        assignedClass: teacher.assignedClass,
+      },
+    });
+
+  } catch (error) {
+    console.error("Assign Class Teacher Error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to assign class teacher.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createClass,
   getAllClasses,
   getClassById,
   updateClass,
   deleteClass,
+  assignClassTeacher
 };

@@ -1,6 +1,85 @@
 const FaceEnrollment = require("../models/FaceEnrollment.model");
 const Student = require("../models/Student.model");
 const Class = require("../models/class.model");
+const {
+  enrollFaceWithAI,
+} = require("../services/ai.service");
+
+const captureFaceSample = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Face image is required.",
+      });
+    }
+
+    const { studentId } = req.params;
+
+    const student = await Student.findById(studentId)
+      .populate("class");
+
+    if (!student) {
+      return res.status(404).json({
+        success: false,
+        message: "Student not found.",
+      });
+    }
+
+    // Class Admin can only enroll students
+    // from their assigned class
+    if (
+      req.user.role === "class_admin" &&
+      (
+        !req.user.assignedClass ||
+        student.class._id.toString() !==
+          req.user.assignedClass.toString()
+      )
+    ) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "You can only enroll students from your assigned class.",
+      });
+    }
+
+    // Send image to Python AI
+    const aiResponse = await enrollFaceWithAI(
+      req.file.buffer,
+      studentId,
+      req.file.originalname,
+      req.file.mimetype
+    );
+
+    if (!aiResponse.success) {
+      return res.status(400).json({
+        success: false,
+        message:
+          aiResponse.message ||
+          "Face enrollment failed.",
+        aiResponse,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: aiResponse.message,
+      data: aiResponse.data,
+    });
+
+  } catch (error) {
+    console.error(
+      "Capture Face Sample Error:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to capture face sample.",
+      error: error.message,
+    });
+  }
+};
 
 // Start face enrollment
 const startFaceEnrollment = async (req, res) => {
@@ -312,4 +391,5 @@ module.exports = {
   completeFaceEnrollment,
   getFaceEnrollment,
   deleteFaceEnrollment,
+  captureFaceSample,
 };

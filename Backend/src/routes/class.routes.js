@@ -6,6 +6,7 @@ const {
   getClassById,
   updateClass,
   deleteClass,
+  assignClassTeacher,
 } = require("../controllers/class.controller");
 
 const protect = require("../middleware/auth.middleware");
@@ -47,6 +48,14 @@ router.delete(
   protect,
   authorizeRoles("super_admin"),
   deleteClass
+);
+
+// Assign a class teacher
+router.put(
+  "/:classId/assign-teacher",
+  protect,
+  authorizeRoles("super_admin"),
+  assignClassTeacher
 );
 
 // =====================================================

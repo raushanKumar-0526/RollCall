@@ -7,6 +7,7 @@ const studentRoutes = require("./routes/student.routes");
 const attendanceRoutes = require("./routes/attendance.routes");
 const auditLogRoutes = require("./routes/auditLog.routes");
 const faceEnrollmentRoutes = require("./routes/faceEnrollment.routes");
+const faceRecognitionRoutes = require("./routes/faceRecognition.routes");
 
 const app = express();
 
@@ -30,5 +31,6 @@ app.use("/api/students", studentRoutes);
 app.use("/api/attendance", attendanceRoutes);
 app.use("/api/audit-logs", auditLogRoutes);
 app.use("/api/face-enrollment", faceEnrollmentRoutes);
+app.use("/api/face-recognition", faceRecognitionRoutes);
 
 module.exports = app;

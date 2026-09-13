@@ -1,11 +1,23 @@
 const express = require("express");
 const multer = require("multer");
 
+const {
+  recognizeAndMarkAttendance,
+} = require("../controllers/faceRecognition.controller");
+
+const protect = require("../middleware/auth.middleware");
+const authorizeRoles = require("../middleware/role.middleware");
+
+const router = express.Router();
+
+// Store uploaded image temporarily in memory
 const upload = multer({
   storage: multer.memoryStorage(),
+
   limits: {
     fileSize: 5 * 1024 * 1024,
   },
+
   fileFilter: (req, file, cb) => {
     const allowedMimeTypes = [
       "image/jpeg",
@@ -41,57 +53,12 @@ const upload = multer({
   },
 });
 
-const {
-  startFaceEnrollment,
-  completeFaceEnrollment,
-  getFaceEnrollment,
-  deleteFaceEnrollment,
-  captureFaceSample,
-} = require("../controllers/faceEnrollment.controller");
-
-const protect = require("../middleware/auth.middleware");
-const authorizeRoles = require("../middleware/role.middleware");
-
-const router = express.Router();
-
-// Start enrollment
 router.post(
-  "/start",
-  protect,
-  authorizeRoles("class_admin"),
-  startFaceEnrollment
-);
-
-// Complete enrollment
-router.post(
-  "/complete",
-  protect,
-  authorizeRoles("class_admin"),
-  completeFaceEnrollment
-);
-
-// Get enrollment status
-router.get(
-  "/:studentId",
-  protect,
-  authorizeRoles("class_admin"),
-  getFaceEnrollment
-);
-
-// Reset enrollment
-router.delete(
-  "/:studentId",
-  protect,
-  authorizeRoles("class_admin"),
-  deleteFaceEnrollment
-);
-
-router.post(
-  "/:studentId/capture",
+  "/recognize-and-mark",
   protect,
   authorizeRoles("class_admin"),
   upload.single("image"),
-  captureFaceSample
+  recognizeAndMarkAttendance
 );
 
 module.exports = router;

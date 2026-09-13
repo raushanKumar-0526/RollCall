@@ -4,9 +4,8 @@ import numpy as np
 from fastapi import FastAPI, File, UploadFile, Form
 
 from utils.face_capture import FaceCapture
-from utils.multi_recognition_service import (
-    MultiStudentRecognitionService
-)
+from utils.profile_service import FaceProfileService
+from utils.multi_recognition_service import MultiStudentRecognitionService
 
 
 app = FastAPI(
@@ -16,8 +15,9 @@ app = FastAPI(
 )
 
 
-# Initialize AI services once when the application starts
+# Services
 face_capture = FaceCapture()
+profile_service = FaceProfileService()
 recognition_service = MultiStudentRecognitionService()
 
 
@@ -44,6 +44,7 @@ async def enroll_face(
     image: UploadFile = File(...)
 ):
     try:
+        # Read uploaded image
         image_bytes = await image.read()
 
         image_array = np.frombuffer(
@@ -62,19 +63,70 @@ async def enroll_face(
                 "message": "Invalid image file."
             }
 
+        # Capture and save face
         result = face_capture.save_face(
             frame,
             student_id
         )
 
-        return result
+        if not result["success"]:
+            return result
+
+        # Count saved face samples
+        student_directory = profile_service.get_student_directory(
+            student_id
+        )
+
+        image_files = [
+            file
+            for file in __import__("os").listdir(student_directory)
+            if file.lower().endswith(
+                (".jpg", ".jpeg", ".png")
+            )
+        ]
+
+        sample_count = len(image_files)
+
+        # Profile is generated after at least 3 samples
+        if sample_count < 3:
+            return {
+                "success": True,
+                "message": "Face sample captured successfully.",
+                "data": {
+                    "student_id": student_id,
+                    "sample_count": sample_count,
+                    "profile_generated": False,
+                    "required_samples": 3
+                }
+            }
+
+        # Generate and save profile automatically
+        profile_path = profile_service.save_profile(
+            student_id
+        )
+
+        return {
+            "success": True,
+            "message": "Face sample captured and face profile generated successfully.",
+            "data": {
+                "student_id": student_id,
+                "sample_count": sample_count,
+                "profile_generated": True,
+                "profile_path": profile_path,
+                "required_samples": 3
+            }
+        }
 
     except Exception as error:
-        print("Enrollment Error:", error)
+
+        print(
+            "Enrollment Error:",
+            error
+        )
 
         return {
             "success": False,
-            "message": "Failed to process face image.",
+            "message": "Failed to process face enrollment.",
             "error": str(error)
         }
 
@@ -84,6 +136,7 @@ async def recognize_face(
     image: UploadFile = File(...)
 ):
     try:
+
         image_bytes = await image.read()
 
         image_array = np.frombuffer(
@@ -133,19 +186,18 @@ async def recognize_face(
                 }
             }
 
-        # Convert OpenCV NumPy values to Python integers
+        # Crop detected face
         x, y, w, h = [
             int(value)
             for value in faces[0]
         ]
 
-        # Crop detected face
         face = frame[
             y:y + h,
             x:x + w
         ]
 
-        # Compare against all enrolled students
+        # Recognize against all enrolled students
         result = recognition_service.recognize_against_all(
             face
         )
@@ -157,7 +209,11 @@ async def recognize_face(
         }
 
     except Exception as error:
-        print("Recognition Error:", error)
+
+        print(
+            "Recognition Error:",
+            error
+        )
 
         return {
             "success": False,
