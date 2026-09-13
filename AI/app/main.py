@@ -1,3 +1,4 @@
+import os
 import cv2
 import numpy as np
 
@@ -127,6 +128,57 @@ async def enroll_face(
         return {
             "success": False,
             "message": "Failed to process face enrollment.",
+            "error": str(error)
+        }
+
+
+@app.get("/enrollment-status/{student_id}")
+def enrollment_status(student_id: str):
+    try:
+        student_directory = profile_service.get_student_directory(
+            student_id
+        )
+
+        if not os.path.exists(student_directory):
+            return {
+                "success": True,
+                "data": {
+                    "student_id": student_id,
+                    "sample_count": 0,
+                    "profile_generated": False
+                }
+            }
+
+        image_files = [
+            file
+            for file in os.listdir(student_directory)
+            if file.lower().endswith(
+                (".jpg", ".jpeg", ".png")
+            )
+        ]
+
+        profile_path = profile_service.get_profile_path(
+            student_id
+        )
+
+        profile_generated = os.path.exists(profile_path)
+
+        return {
+            "success": True,
+            "data": {
+                "student_id": student_id,
+                "sample_count": len(image_files),
+                "profile_generated": profile_generated,
+                "profile_path": profile_path if profile_generated else None
+            }
+        }
+
+    except Exception as error:
+        print("Enrollment Status Error:", error)
+
+        return {
+            "success": False,
+            "message": "Failed to check enrollment status.",
             "error": str(error)
         }
 
