@@ -137,8 +137,39 @@ const getEnrollmentStatusFromAI = async (studentId) => {
 };
 
 
+const resetEnrollmentInAI = async (studentId) => {
+  try {
+    const response = await fetch(
+      `http://127.0.0.1:8000/reset-enrollment/${studentId}`,
+      {
+        method: "DELETE",
+      }
+    );
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(
+        data.message || "AI enrollment reset failed."
+      );
+    }
+
+    return data;
+  } catch (error) {
+    console.error(
+      "AI Enrollment Reset Error:",
+      error.message
+    );
+
+    throw new Error(
+      `AI enrollment reset service unavailable: ${error.message}`
+    );
+  }
+};
+
 module.exports = {
   sendFaceToAI,
   enrollFaceWithAI,
   getEnrollmentStatusFromAI,
+  resetEnrollmentInAI
 };

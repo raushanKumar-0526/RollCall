@@ -4,6 +4,12 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/user.model");
 const Class = require("../models/class.model");
 
+
+const {
+  createAuditLog,
+} = require("./auditLog.controller");
+
+
 // Generate JWT token
 const generateToken = (userId, role) => {
   return jwt.sign(
@@ -32,7 +38,10 @@ const registerUser = async (req, res) => {
       phone,
     } = req.body;
 
-    // Validate required fields
+    // ==========================================
+    // 1. Validate required fields
+    // ==========================================
+
     if (!name || !email || !password || !role) {
       return res.status(400).json({
         success: false,
@@ -40,24 +49,70 @@ const registerUser = async (req, res) => {
       });
     }
 
-    // Validate role
-    const allowedRoles = [
-      "super_admin",
-      "class_admin",
+    // ==========================================
+    // 2. Clean input
+    // ==========================================
+
+    const cleanName = name.trim();
+    const cleanEmail = email.trim().toLowerCase();
+
+    if (!cleanName) {
+      return res.status(400).json({
+        success: false,
+        message: "Name cannot be empty",
+      });
+    }
+
+    // ==========================================
+    // 3. Validate email
+    // ==========================================
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(cleanEmail)) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a valid email address",
+      });
+    }
+
+    // ==========================================
+    // 4. Validate password
+    // ==========================================
+
+    if (password.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "Password must be at least 6 characters long",
+      });
+    }
+
+    // ==========================================
+    // 5. Public registration roles
+    // ==========================================
+    // IMPORTANT:
+    // super_admin and class_admin cannot be
+    // created through public registration.
+
+    const allowedPublicRoles = [
       "student",
       "parent",
     ];
 
-    if (!allowedRoles.includes(role)) {
-      return res.status(400).json({
+    if (!allowedPublicRoles.includes(role)) {
+      return res.status(403).json({
         success: false,
-        message: "Invalid user role",
+        message:
+          "This role cannot be created through public registration.",
       });
     }
 
-    // Check existing user
+    // ==========================================
+    // 6. Check existing user
+    // ==========================================
+
     const existingUser = await User.findOne({
-      email: email.toLowerCase(),
+      email: cleanEmail,
     });
 
     if (existingUser) {
@@ -67,23 +122,38 @@ const registerUser = async (req, res) => {
       });
     }
 
-    // Hash password
+    // ==========================================
+    // 7. Hash password
+    // ==========================================
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create user
+    // ==========================================
+    // 8. Create user
+    // ==========================================
+
     const user = await User.create({
-      name,
-      email: email.toLowerCase(),
+      name: cleanName,
+      email: cleanEmail,
       password: hashedPassword,
       role,
-      phone,
+      phone: phone ? phone.trim() : undefined,
     });
 
-    // Generate token
-    const token = generateToken(user._id, user.role);
+    // ==========================================
+    // 9. Generate JWT
+    // ==========================================
 
-    // Response without password
-    res.status(201).json({
+    const token = generateToken(
+      user._id,
+      user.role
+    );
+
+    // ==========================================
+    // 10. Response
+    // ==========================================
+
+    return res.status(201).json({
       success: true,
       message: "User registered successfully",
       token,
@@ -99,7 +169,7 @@ const registerUser = async (req, res) => {
   } catch (error) {
     console.error("Register User Error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Server error while registering user",
     });
@@ -161,6 +231,21 @@ const loginUser = async (req, res) => {
     // Update last login
     user.lastLogin = new Date();
     await user.save();
+
+    await createAuditLog({
+      user: user._id,
+      role: user.role,
+      action: "login",
+      module: "authentication",
+      description: `${user.name} logged in successfully.`,
+      targetType: "user",
+      targetId: user._id,
+      metadata: {
+        email: user.email,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
 
     // Generate JWT
     const token = generateToken(user._id, user.role);

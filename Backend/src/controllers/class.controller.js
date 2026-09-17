@@ -145,7 +145,7 @@ const getClassById = async (req, res) => {
     // Class Admin can only access assigned class
     if (
       req.user.role === "class_admin" &&
-      String(classData.classTeacher._id) !== String(req.user.userId)
+      String(req.user.assignedClass) !== String(classData._id)
     ) {
       return res.status(403).json({
         success: false,

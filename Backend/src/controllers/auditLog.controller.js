@@ -1,3 +1,5 @@
+const mongoose = require("mongoose");
+
 const AuditLog = require("../models/AuditLog.model");
 
 // =====================================================
@@ -33,9 +35,9 @@ const createAuditLog = async ({
 
     return auditLog;
   } catch (error) {
-    console.error("Create Audit Log Error:", error);
+    console.error("Create Audit Log Error:", error.message);
 
-    // Audit failure should not normally crash
+    // Audit failure must not break
     // the main business operation.
     return null;
   }
@@ -59,9 +61,9 @@ const getAuditLogs = async (req, res) => {
 
     const filter = {};
 
-    // -----------------------------------------------
+    // -------------------------------------------------
     // Filters
-    // -----------------------------------------------
+    // -------------------------------------------------
 
     if (action) {
       filter.action = action;
@@ -75,52 +77,46 @@ const getAuditLogs = async (req, res) => {
       filter.role = role;
     }
 
-    // -----------------------------------------------
+    // -------------------------------------------------
     // Pagination
-    // -----------------------------------------------
+    // -------------------------------------------------
 
-    const pageNumber = Math.max(
-      Number(page) || 1,
-      1
-    );
+    const pageNumber = Math.max(Number(page) || 1, 1);
 
     const limitNumber = Math.min(
       Math.max(Number(limit) || 20, 1),
       100
     );
 
-    const skip =
-      (pageNumber - 1) * limitNumber;
+    const skip = (pageNumber - 1) * limitNumber;
 
-    // -----------------------------------------------
-    // Search user name/email
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // Search user name/email/description
+    // -------------------------------------------------
 
-    let userIds = null;
-
-    if (search) {
+    if (search && search.trim()) {
       const User = require("../models/user.model");
+
+      const searchText = search.trim();
 
       const users = await User.find({
         $or: [
           {
             name: {
-              $regex: search,
+              $regex: searchText,
               $options: "i",
             },
           },
           {
             email: {
-              $regex: search,
+              $regex: searchText,
               $options: "i",
             },
           },
         ],
       }).select("_id");
 
-      userIds = users.map(
-        (user) => user._id
-      );
+      const userIds = users.map((user) => user._id);
 
       filter.$or = [
         {
@@ -130,53 +126,42 @@ const getAuditLogs = async (req, res) => {
         },
         {
           description: {
-            $regex: search,
+            $regex: searchText,
             $options: "i",
           },
         },
       ];
     }
 
-    // -----------------------------------------------
-    // Fetch logs
-    // -----------------------------------------------
+    // -------------------------------------------------
+    // Fetch logs + total count
+    // -------------------------------------------------
 
-    const [logs, total] =
-      await Promise.all([
-        AuditLog.find(filter)
-          .populate(
-            "user",
-            "name email role"
-          )
-          .sort({
-            timestamp: -1,
-          })
-          .skip(skip)
-          .limit(limitNumber),
+    const [logs, total] = await Promise.all([
+      AuditLog.find(filter)
+        .populate("user", "name email role")
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(limitNumber),
 
-        AuditLog.countDocuments(filter),
-      ]);
+      AuditLog.countDocuments(filter),
+    ]);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       count: logs.length,
       total,
       page: pageNumber,
-      totalPages: Math.ceil(
-        total / limitNumber
-      ),
+      limit: limitNumber,
+      totalPages: Math.ceil(total / limitNumber),
       logs,
     });
   } catch (error) {
-    console.error(
-      "Get Audit Logs Error:",
-      error
-    );
+    console.error("Get Audit Logs Error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message:
-        "Server error while fetching audit logs",
+      message: "Server error while fetching audit logs.",
     });
   }
 };
@@ -190,33 +175,39 @@ const getAuditLogById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const log = await AuditLog.findById(id)
-      .populate(
-        "user",
-        "name email role"
-      );
+    // -------------------------------------------------
+    // Validate MongoDB ObjectId
+    // -------------------------------------------------
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid audit log ID.",
+      });
+    }
+
+    const log = await AuditLog.findById(id).populate(
+      "user",
+      "name email role"
+    );
 
     if (!log) {
       return res.status(404).json({
         success: false,
-        message: "Audit log not found",
+        message: "Audit log not found.",
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       log,
     });
   } catch (error) {
-    console.error(
-      "Get Audit Log Error:",
-      error
-    );
+    console.error("Get Audit Log Error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
-      message:
-        "Server error while fetching audit log",
+      message: "Server error while fetching audit log.",
     });
   }
 };

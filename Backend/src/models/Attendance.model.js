@@ -72,7 +72,7 @@ const attendanceSchema = new mongoose.Schema(
     },
 
     // Whether this record was manually modified
-    isModified: {
+    isCorrected: {
       type: Boolean,
       default: false,
     },
@@ -100,6 +100,6 @@ attendanceSchema.index(
   }
 );
 
-const Attendance = mongoose.model("Attendance", attendanceSchema);
-
-module.exports = Attendance;
+module.exports =
+  mongoose.models.Attendance ||
+  mongoose.model("Attendance", attendanceSchema);

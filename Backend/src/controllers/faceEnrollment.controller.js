@@ -4,7 +4,12 @@ const Class = require("../models/class.model");
 const {
   enrollFaceWithAI,
   getEnrollmentStatusFromAI,
+  resetEnrollmentInAI
 } = require("../services/ai.service");
+
+const {
+  createAuditLog,
+} = require("./auditLog.controller");
 
 const captureFaceSample = async (req, res) => {
   try {
@@ -122,6 +127,9 @@ const startFaceEnrollment = async (req, res) => {
         message: "Face is already enrolled for this student.",
       });
     }
+
+    // Clean any old AI face samples/profile
+    await resetEnrollmentInAI(studentId);
 
     // Check existing enrollment record
     let enrollment = await FaceEnrollment.findOne({
@@ -283,6 +291,27 @@ const completeFaceEnrollment = async (req, res) => {
 
     await student.save();
 
+    await createAuditLog({
+      user: req.user.userId,
+      role: req.user.role,
+      action: "face_enrolled",
+      module: "face_enrollment",
+      description: `Face enrollment completed for ${
+        student.user?.name || "student"
+      }.`,
+      targetType: "face_enrollment",
+      targetId: faceEnrollment._id,
+      metadata: {
+        studentId: student._id,
+        sampleCount: faceEnrollment.sampleCount,
+        modelName: faceEnrollment.modelName,
+        modelVersion: faceEnrollment.modelVersion,
+        averageQuality: faceEnrollment.averageQuality,
+      },
+      ipAddress: req.ip,
+      userAgent: req.get("user-agent"),
+    });
+
     return res.status(200).json({
       success: true,
       message:
@@ -371,7 +400,7 @@ const deleteFaceEnrollment = async (req, res) => {
   try {
     const { studentId } = req.params;
 
-    const student = await Student.findById(studentId).populate("class");
+    const student = await Student.findById(studentId);
 
     if (!student) {
       return res.status(404).json({
@@ -380,10 +409,11 @@ const deleteFaceEnrollment = async (req, res) => {
       });
     }
 
-    // Class Admin scope check
+    // Class Admin can only manage students
+    // from their assigned class.
     if (
       req.user.role === "class_admin" &&
-      student.class._id.toString() !== req.user.assignedClass?.toString()
+      String(student.class) !== String(req.user.assignedClass)
     ) {
       return res.status(403).json({
         success: false,
@@ -391,29 +421,27 @@ const deleteFaceEnrollment = async (req, res) => {
       });
     }
 
+    // Remove face data from Python AI service
+    await resetEnrollmentInAI(studentId);
+
+    // Reset MongoDB FaceEnrollment record
     const enrollment = await FaceEnrollment.findOne({
       student: studentId,
     });
 
-    if (!enrollment) {
-      return res.status(404).json({
-        success: false,
-        message: "Face enrollment not found.",
-      });
+    if (enrollment) {
+      enrollment.status = "pending";
+      enrollment.sampleCount = 0;
+      enrollment.embeddingReference = null;
+      enrollment.averageQuality = null;
+      enrollment.failureReason = null;
+      enrollment.isActive = false;
+      enrollment.enrolledAt = null;
+
+      await enrollment.save();
     }
 
-    enrollment.status = "pending";
-    enrollment.sampleCount = 0;
-    enrollment.embeddingReference = null;
-    enrollment.modelName = null;
-    enrollment.modelVersion = null;
-    enrollment.averageQuality = null;
-    enrollment.enrolledAt = null;
-    enrollment.failureReason = null;
-    enrollment.isActive = false;
-
-    await enrollment.save();
-
+    // Reset student's enrollment status
     student.faceEnrolled = false;
     student.faceEnrollmentDate = null;
 
@@ -421,15 +449,20 @@ const deleteFaceEnrollment = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Face enrollment has been reset.",
+      message: "Face enrollment reset successfully.",
+      data: {
+        studentId: student._id,
+        studentName: student.user?.name || null,
+        faceEnrolled: student.faceEnrolled,
+        aiDataDeleted: true,
+      },
     });
   } catch (error) {
     console.error("Delete Face Enrollment Error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Failed to reset face enrollment.",
-      error: error.message,
+      message: error.message || "Failed to reset face enrollment.",
     });
   }
 };

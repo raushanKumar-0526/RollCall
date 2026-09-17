@@ -1,6 +1,7 @@
 import os
 import cv2
 import numpy as np
+import shutil
 
 from fastapi import FastAPI, File, UploadFile, Form
 
@@ -272,3 +273,36 @@ async def recognize_face(
             "message": "Face recognition failed.",
             "error": str(error)
         }
+
+
+@app.delete("/reset-enrollment/{student_id}")
+def reset_enrollment(student_id: str):
+    student_dir = os.path.join("face_data", student_id)
+
+    if not os.path.exists(student_dir):
+        return {
+            "success": True,
+            "message": "No AI enrollment data found. Nothing to clean.",
+            "data": {
+                "student_id": student_id,
+                "deleted": False
+            }
+        }
+
+    try:
+        shutil.rmtree(student_dir)
+
+        return {
+            "success": True,
+            "message": "AI enrollment data cleaned successfully.",
+            "data": {
+                "student_id": student_id,
+                "deleted": True
+            }
+        }
+
+    except Exception as error:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to clean AI enrollment data: {str(error)}"
+        )
